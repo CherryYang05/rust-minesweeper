@@ -1,4 +1,7 @@
-use sdl2::{event::Event, keyboard::{Keycode, Mod, Scancode}, pixels::Color};
+use event::{Events, MyEvent};
+use sdl2::pixels::Color;
+mod event;
+
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video = sdl_context.video().unwrap();
@@ -14,24 +17,13 @@ fn main() {
 
     canvas.present();
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    let event_pump = sdl_context.event_pump().unwrap();
+    let mut event = Events::new(event_pump);
 
     'running: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                // 按下窗口右上角关闭键结束整个程序
-                Event::Quit { .. } => {
-                    break 'running;
-                }
-                // // 按下键盘上方向键结束整个程序
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } => {
-                    break 'running;
-                }
-                _ => {}
-            }
+        event.pump();
+        if let MyEvent::Exit = event.event {
+            break 'running
         }
     }
 }
