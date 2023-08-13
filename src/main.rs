@@ -1,12 +1,11 @@
 use event::{Events, MyEvent};
 use map::Matrix;
-use map::TILE_WIDTH;
-use sdl2::{pixels::Color, rect::Rect};
+
 mod event;
 mod map;
 
-static BACKGROUND_COLOR: Color = Color::RGB(198, 198, 198);
-static BOARD_COLOR: Color = Color::RGB(128, 128, 128);
+use map::BACKGROUND_COLOR;
+use map::TILE_WIDTH;
 
 fn main() {
     let sdl_context = sdl2::init().unwrap();
@@ -31,29 +30,13 @@ fn main() {
     // 填充背景颜色
     canvas.clear();
 
-    // 设置画笔颜色
-    canvas.set_draw_color(BOARD_COLOR);
     // canvas.draw_rect(Rect::new(20, 20, 30, 40)).unwrap();
     // canvas.draw_line(Point::new(200, 0), Point::new(200, 400)).unwrap();
 
-
-
-
-
-
-
-    let mut map = Matrix::new(800 / TILE_WIDTH as usize, 600 / TILE_WIDTH as usize);
+    let mut map = Matrix::new(600 / TILE_WIDTH as usize, 800 / TILE_WIDTH as usize);
 
     map.draw_map(&mut canvas).unwrap();
-
-
-
-
-
-
-
-
-
+    map.generate_mine(&mut canvas, 15);
 
     // 更新屏幕
     canvas.present();
