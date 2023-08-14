@@ -6,8 +6,8 @@ use std::path::Path;
 use rand::Rng;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::Canvas;
-use sdl2::surface::Surface;
+use sdl2::render::{Canvas, Texture};
+use sdl2::surface::{self, Surface};
 use sdl2::video::Window;
 
 pub static TILE_WIDTH: u32 = 40; // 每个小格的宽度
@@ -25,11 +25,11 @@ type Map = Matrix;
 // 地图中每个小格
 #[derive(Clone)]
 pub enum Tile {
-    MINE = -1,
-    FLAG = -2,
-    NUM = -3,
-    EMPTY = -4,
-    UNKNOWN = -5,
+    MINE,
+    FLAG,
+    NUM(u8),
+    EMPTY,
+    UNKNOWN,
 }
 
 // /// 为自定义结构体 Tile 实现 PartialEq trait 以实现结构体之间比较大小
@@ -54,10 +54,9 @@ impl Matrix {
     pub fn draw_map(&self, canvas: &mut Canvas<Window>) -> Result<(), String> {
         // let mut map = Map::new(height, width);
 
-        for (mx, lines) in self.data.iter().enumerate() {
-            for (my, _) in lines.iter().enumerate() {
+        for mx in 0..self.n {
+            for my in 0..self.m {
                 // println!("mx = {}, my = {}", mx, my);
-                // 设置画笔颜色
                 canvas.set_draw_color(BOARD_COLOR);
                 draw_one_tile(canvas, mx, my)?;
             }
@@ -67,7 +66,7 @@ impl Matrix {
     }
 
     /// 随机生成地雷
-    pub fn generate_mine(&self, canvas: &mut Canvas<Window>, mut mine_num: usize) {
+    pub fn generate_mine(&mut self, canvas: &mut Canvas<Window>, mut mine_num: usize) {
         let mut rng = rand::thread_rng();
         while mine_num > 0 {
             let r_mx = rng.gen_range(0..self.n);
@@ -76,32 +75,73 @@ impl Matrix {
                 continue;
             }
             mine_num -= 1;
-            self.set_tile_from_img(canvas, Tile::MINE, r_mx, r_my);
+            self.data[r_mx][r_my] = Tile::MINE;
+            set_tile_from_img(canvas, Tile::MINE, r_mx, r_my);
         }
+
+        self.generate_num(canvas);
     }
 
-    /// 根据 Tile 类型渲染 Tile
-    pub fn set_tile_from_img(&self, canvas: &mut Canvas<Window>, t: Tile, mx: usize, my: usize) {
-        let texture_creator = canvas.texture_creator();
-        match t {
-            Tile::MINE => {
-                let _surface = Surface::new(40, 40, sdl2::pixels::PixelFormatEnum::RGB24);
-                let surface = Surface::load_bmp(Path::new("./assets/mine.bmp")).unwrap();
-                let texture = texture_creator
-                    .create_texture_from_surface(surface)
-                    .unwrap();
-                canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
-                draw_one_tile(canvas, mx, my).unwrap();
+    /// 生成地雷周围的数字
+    fn generate_num(&mut self, canvas: &mut Canvas<Window>) {
+        // let mut mine_num: Vec<Vec<u8>> = vec![vec![0; self.m]; self.n];
+        for mx in 0..self.n {
+            for my in 0..self.m {
+                let mut mine_num: u8 = 0;
+                if let Tile::UNKNOWN = self.data[mx][my] {
+                    for x in -1..=1 {
+                        for y in -1..=1 {
+                            let nx = mx as isize + x;
+                            let ny = my as isize + y;
+                            if nx >= 0 && nx < self.n as isize && ny >= 0 && ny < self.m as isize {
+                                if let Tile::MINE = self.data[nx as usize][ny as usize] {
+                                    mine_num += 1;
+                                }
+                            }
+                        }
+                    }
+                    self.data[mx][my] = Tile::NUM(mine_num);
+                    set_tile_from_img(canvas, Tile::NUM(mine_num), mx, my);
+                }
             }
-            _ => (),
         }
     }
 }
 
 /// 渲染单独某一块 Tile
 fn draw_one_tile(canvas: &mut Canvas<Window>, mx: usize, my: usize) -> Result<(), String> {
+    canvas.set_draw_color(BOARD_COLOR);
     canvas.draw_rect(get_tile_rect(mx, my))?;
     Ok(())
+}
+
+/// 根据 Tile 类型渲染 Tile
+fn set_tile_from_img(canvas: &mut Canvas<Window>, t: Tile, mx: usize, my: usize) {
+    let texture_creator = canvas.texture_creator();
+    match t {
+        Tile::MINE => {
+            let surface = Surface::load_bmp(Path::new("./assets/mine.bmp")).unwrap();
+            let texture = texture_creator
+                .create_texture_from_surface(surface)
+                .unwrap();
+
+            canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
+            draw_one_tile(canvas, mx, my).unwrap();
+        }
+        Tile::NUM(num) => {
+            if num > 0 {
+                let surface =
+                    Surface::load_bmp(Path::new(format!("./assets/{}.bmp", num).as_str())).unwrap();
+                let texture = texture_creator
+                    .create_texture_from_surface(surface)
+                    .unwrap();
+
+                canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
+                draw_one_tile(canvas, mx, my).unwrap();
+            }
+        }
+        _ => (),
+    }
 }
 
 /// 获取对应 Tile 所在的 Rect
