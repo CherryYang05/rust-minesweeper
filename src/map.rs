@@ -1,13 +1,14 @@
 /// 处理地图中相关事件
 /// 包含地图结构体，对地图中每个块进行染色填充
 /// 实现生成地雷，插旗，显示安全区域等算法
+///
 use std::path::Path;
 
 use rand::Rng;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::{Canvas, Texture};
-use sdl2::surface::{self, Surface};
+use sdl2::render::Canvas;
+use sdl2::surface::Surface;
 use sdl2::video::Window;
 
 pub static TILE_WIDTH: u32 = 40; // 每个小格的宽度
@@ -25,11 +26,11 @@ type Map = Matrix;
 // 地图中每个小格
 #[derive(Clone)]
 pub enum Tile {
-    MINE,
-    FLAG,
-    NUM(u8),
-    EMPTY,
-    UNKNOWN,
+    UNKNOWN, // 初始化之后的状态
+    MINE,    // 地雷
+    FLAG,    // 鼠标右键插旗子
+    NUM(u8), // 地雷数量标记
+    SAFE,    // 没有数字的 Tile
 }
 
 // /// 为自定义结构体 Tile 实现 PartialEq trait 以实现结构体之间比较大小
@@ -52,16 +53,11 @@ impl Matrix {
 
     /// 绘制整个地图
     pub fn draw_map(&self, canvas: &mut Canvas<Window>) -> Result<(), String> {
-        // let mut map = Map::new(height, width);
-
         for mx in 0..self.n {
             for my in 0..self.m {
-                // println!("mx = {}, my = {}", mx, my);
-                canvas.set_draw_color(BOARD_COLOR);
                 draw_one_tile(canvas, mx, my)?;
             }
         }
-
         Ok(())
     }
 
@@ -76,14 +72,12 @@ impl Matrix {
             }
             mine_num -= 1;
             self.data[r_mx][r_my] = Tile::MINE;
-            set_tile_from_img(canvas, Tile::MINE, r_mx, r_my);
+            // set_tile_from_img(canvas, &Tile::MINE, r_mx, r_my);
         }
-
-        self.generate_num(canvas);
     }
 
     /// 生成地雷周围的数字
-    fn generate_num(&mut self, canvas: &mut Canvas<Window>) {
+    pub fn generate_num(&mut self, canvas: &mut Canvas<Window>) {
         // let mut mine_num: Vec<Vec<u8>> = vec![vec![0; self.m]; self.n];
         for mx in 0..self.n {
             for my in 0..self.m {
@@ -100,23 +94,38 @@ impl Matrix {
                             }
                         }
                     }
-                    self.data[mx][my] = Tile::NUM(mine_num);
-                    set_tile_from_img(canvas, Tile::NUM(mine_num), mx, my);
+                    if mine_num == 0 {
+                        self.data[mx][my] = Tile::SAFE;
+                    } else {
+                        self.data[mx][my] = Tile::NUM(mine_num);
+                    }
                 }
+                // set_tile_from_img(canvas, &Tile::NUM(mine_num), mx, my);
+            }
+        }
+    }
+
+    pub fn draw_tiles(&self, canvas: &mut Canvas<Window>) {
+        for mx in 0..self.n {
+            for my in 0..self.m {
+                let t = &self.data[mx][my];
+                set_tile_from_img(canvas, &t, mx, my);
             }
         }
     }
 }
 
-/// 渲染单独某一块 Tile
+/// 渲染单独某一块 Tile 的边框和底色
 fn draw_one_tile(canvas: &mut Canvas<Window>, mx: usize, my: usize) -> Result<(), String> {
+    canvas.set_draw_color(BACKGROUND_COLOR);
+    canvas.fill_rect(get_tile_rect(mx, my))?;
     canvas.set_draw_color(BOARD_COLOR);
     canvas.draw_rect(get_tile_rect(mx, my))?;
     Ok(())
 }
 
 /// 根据 Tile 类型渲染 Tile
-fn set_tile_from_img(canvas: &mut Canvas<Window>, t: Tile, mx: usize, my: usize) {
+fn set_tile_from_img(canvas: &mut Canvas<Window>, t: &Tile, mx: usize, my: usize) {
     let texture_creator = canvas.texture_creator();
     match t {
         Tile::MINE => {
@@ -126,10 +135,9 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: Tile, mx: usize, my: usize)
                 .unwrap();
 
             canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
-            draw_one_tile(canvas, mx, my).unwrap();
         }
         Tile::NUM(num) => {
-            if num > 0 {
+            if num > &0 {
                 let surface =
                     Surface::load_bmp(Path::new(format!("./assets/{}.bmp", num).as_str())).unwrap();
                 let texture = texture_creator
@@ -137,11 +145,14 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: Tile, mx: usize, my: usize)
                     .unwrap();
 
                 canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
-                draw_one_tile(canvas, mx, my).unwrap();
             }
         }
         _ => (),
     }
+
+    // 重新描一下边框
+    canvas.set_draw_color(BOARD_COLOR);
+    canvas.draw_rect(get_tile_rect(mx, my)).unwrap();
 }
 
 /// 获取对应 Tile 所在的 Rect
