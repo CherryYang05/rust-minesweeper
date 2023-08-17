@@ -23,7 +23,8 @@ pub struct Matrix {
     n: usize,
     m: usize, // n 行 m 列的矩阵
     data: Vec<Vec<Tile>>,
-    flag: Vec<Vec<bool>>
+    flag: Vec<Vec<bool>>,
+    shown: Vec<Vec<bool>>,
 }
 
 type Map = Matrix;
@@ -61,7 +62,14 @@ impl Matrix {
     pub fn new(n: usize, m: usize) -> Self {
         let data = vec![vec![Tile::UNKNOWN; m]; n];
         let flag = vec![vec![false; m]; n];
-        Matrix { n, m, data, flag }
+        let shown = vec![vec![false; m]; n];
+        Matrix {
+            n,
+            m,
+            data,
+            flag,
+            shown,
+        }
     }
 
     /// 绘制整个地图
@@ -118,17 +126,24 @@ impl Matrix {
         }
     }
 
-    // 给所有 Tile 设置 img 或背景
-    pub fn draw_tiles(&self, canvas: &mut Canvas<Window>) {
+    /// 给所有 Tile 设置 img 或背景
+    pub fn draw_tiles(&mut self, canvas: &mut Canvas<Window>, debug: bool) {
         for mx in 0..self.n {
             for my in 0..self.m {
                 let t = &self.data[mx][my];
-                set_tile_from_img(canvas, t, mx, my);
+                if debug {
+                    set_tile_from_img(canvas, t, mx, my);
+                    self.shown[mx][my] = false;
+                } else {
+                    if self.shown[mx][my] {
+                        set_tile_from_img(canvas, t, mx, my);
+                    }
+                }
             }
         }
     }
 
-    // 插小旗子，再次点击取消插旗
+    /// 插小旗子，再次点击取消插旗
     pub fn set_flag(&mut self, canvas: &mut Canvas<Window>, mouse_state: &MouseState) {
         let tile = mouse_key_in_which_tile(mouse_state.x(), mouse_state.y());
         // let tile_state = self.data[tile.0][tile.1];
@@ -142,15 +157,50 @@ impl Matrix {
         }
     }
 
-    // 左键点击显示 Tile，并显示连续的安全区域
+    /// 左键点击显示 Tile，并显示连续的安全区域
     pub fn show_tile(&mut self, canvas: &mut Canvas<Window>, mouse_state: &MouseState) {
         let tile = mouse_key_in_which_tile(mouse_state.x(), mouse_state.y());
         set_tile_from_img(canvas, &self.data[tile.0][tile.1], tile.0, tile.1);
+        if self.data[tile.0][tile.1] == Tile::MINE {
+            self.draw_tiles(canvas, true);
+        } else if self.data[tile.0][tile.1] == Tile::SAFE {
+            self.flood(tile.0, tile.1);
+        }
+    }
+
+    /// DFS 算法检测连续的安全区域，
+    /// 有数字的 Tile 看成高度，SAFE 区域看成高度为 0。
+    /// 算法可以看成往一个凹下去的地方倒水，最多可以覆盖多少块 Tile。
+    fn flood(&mut self, x: usize, y: usize) {
+        if self.data[x][y] == Tile::NUM(0) {
+            self.shown[x][y] = true;
+            return;
+        }
+        self.shown[x][y] = true;
+        for nx in -1..=1 {
+            for ny in -1..=1 {
+                if i32::abs(nx as i32) != i32::abs(ny as i32) {
+                    let cx = x as isize + nx;
+                    let cy = y as isize + ny;
+                    if cx >= 0 && cx < self.n as isize && cy >= 0 && cy < self.m as isize {
+                        if self.shown[cx as usize][cy as usize] == false {
+                            self.shown[x][y] = true;
+                            self.flood(cx as usize, cy as usize);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 /// 渲染单独某一块 Tile 的边框和底色
-fn draw_one_tile(canvas: &mut Canvas<Window>, color: Color, mx: usize, my: usize) -> Result<(), String> {
+fn draw_one_tile(
+    canvas: &mut Canvas<Window>,
+    color: Color,
+    mx: usize,
+    my: usize,
+) -> Result<(), String> {
     // let tile: (u32, u32);
     // let mouse_state = unsafe { SDL_GetMouseState(tile.0, tile.1) };
     // let tile = mouse_key_in_which_tile(mouse_state.x(), mouse_state.y());

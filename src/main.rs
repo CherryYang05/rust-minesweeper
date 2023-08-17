@@ -37,7 +37,7 @@ fn main() {
     let mut map = Matrix::new(600 / TILE_WIDTH as usize, 800 / TILE_WIDTH as usize);
 
     map.draw_map(&mut canvas).unwrap();
-    map.generate_mine(10);
+    map.generate_mine(30);
     map.generate_num();
 
     // 更新屏幕
@@ -66,7 +66,7 @@ fn main() {
                     break 'running
                 },
 
-                // 按下键盘上方向键设置 Debug 模式
+                // 按键盘上方向键设置 Debug 模式
                 Event::KeyDown {
                     keycode: Some(Keycode::Up),
                     ..
@@ -75,8 +75,16 @@ fn main() {
                     if DEBUG == true {
                         map.draw_map(&mut canvas).unwrap();
                     } else {
-                        map.draw_tiles(&mut canvas);
+                        map.draw_tiles(&mut canvas, true);
                     }
+                },
+
+                // 按键盘下方向键重新生成地雷
+                Event::KeyDown {
+                    keycode: Some(Keycode::Down),
+                    ..
+                } => {
+                    // TODO
                 },
 
                 // 鼠标左键按下显示 Tile
@@ -85,6 +93,7 @@ fn main() {
                     ..
                 } => {
                     map.show_tile(&mut canvas, &mouse_state);
+                    map.draw_tiles(&mut canvas, false);
                 },
 
                 // 鼠标右键按下插小旗子
