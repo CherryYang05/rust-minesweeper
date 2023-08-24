@@ -9,15 +9,16 @@ use sdl2::mouse::MouseState;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
-use sdl2::surface::{Surface, SurfaceRef};
-use sdl2::sys::{SDL_GetMouseState, SDL_MapRGB, SDL_SetColorKey};
+use sdl2::surface::Surface;
 use sdl2::video::Window;
+
+use crate::MARGIN;
 
 pub static TILE_WIDTH: u32 = 40; // 每个小格的宽度
 pub static BACKGROUND_COLOR: Color = Color::RGB(198, 198, 198);
 pub static BOARD_COLOR: Color = Color::RGB(128, 128, 128);
 pub static SAFE_COLOR: Color = Color::RGB(165, 165, 165);
-pub static HOVER_COLOR: Color = Color::RGB(220, 220, 220);
+// pub static HOVER_COLOR: Color = Color::RGB(220, 220, 220);
 
 pub struct Matrix {
     n: usize,
@@ -25,18 +26,20 @@ pub struct Matrix {
     data: Vec<Vec<Tile>>,
     flag: Vec<Vec<bool>>,
     shown: Vec<Vec<bool>>,
+    // flag_num: usize,
 }
 
-type Map = Matrix;
+// type Map = Matrix;
 
 // 地图中每个小格
 #[derive(Clone)]
 pub enum Tile {
-    UNKNOWN, // 初始化之后的状态
-    MINE,    // 地雷
-    FLAG,    // 鼠标右键插旗子
-    NUM(u8), // 地雷数量标记
-    SAFE,    // 没有数字的 Tile
+    UNKNOWN,  // 初始化之后的状态
+    MINE,     // 地雷
+    RED_MINE, // 踩到的地雷
+    FLAG,     // 鼠标右键插旗子
+    NUM(u8),  // 地雷数量标记
+    SAFE,     // 没有数字的 Tile
 }
 
 /// 为自定义结构体 Tile 实现 PartialEq trait 以实现结构体之间比较大小
@@ -69,7 +72,18 @@ impl Matrix {
             data,
             flag,
             shown,
+            // flag_num: mine_num,
         }
+    }
+
+    // 重置 map
+    pub fn renew(&mut self, n: usize, m: usize) {
+        let data = vec![Tile::UNKNOWN; m];
+        let flag = vec![false; m];
+        let shown = vec![false; m];
+        self.data.fill(data);
+        self.flag.fill(flag);
+        self.shown.fill(shown);
     }
 
     /// 绘制整个地图
@@ -146,26 +160,46 @@ impl Matrix {
     /// 插小旗子，再次点击取消插旗
     pub fn set_flag(&mut self, canvas: &mut Canvas<Window>, mouse_state: &MouseState) {
         let tile = mouse_key_in_which_tile(mouse_state.x(), mouse_state.y());
-        // let tile_state = self.data[tile.0][tile.1];
-        // 如果当前 Tile 不是旗子，则插上旗子，否则取消旗子
-        if self.flag[tile.0][tile.1] == false {
-            self.flag[tile.0][tile.1] = true;
-            set_tile_from_img(canvas, &Tile::FLAG, tile.0, tile.1);
-        } else {
-            self.flag[tile.0][tile.1] = false;
-            draw_one_tile(canvas, BACKGROUND_COLOR, tile.0, tile.1).unwrap();
+        match tile {
+            Ok((x, y)) => {
+                // let tile_state = self.data[tile.0][tile.1];
+                // 如果当前 Tile 不是旗子，则插上旗子，否则取消旗子
+                if self.shown[x][y] == false {
+                    if self.flag[x][y] == false {
+                        self.flag[x][y] = true;
+                        set_tile_from_img(canvas, &Tile::FLAG, x, y);
+                    } else {
+                        self.flag[x][y] = false;
+                        draw_one_tile(canvas, BACKGROUND_COLOR, x, y).unwrap();
+                    }
+                }
+            }
+            Err(_) => {}
         }
     }
 
     /// 左键点击显示 Tile，并显示连续的安全区域
-    pub fn show_tile(&mut self, canvas: &mut Canvas<Window>, mouse_state: &MouseState) {
+    pub fn show_tile(&mut self, canvas: &mut Canvas<Window>, mouse_state: &MouseState) -> bool {
         let tile = mouse_key_in_which_tile(mouse_state.x(), mouse_state.y());
-        set_tile_from_img(canvas, &self.data[tile.0][tile.1], tile.0, tile.1);
-        if self.data[tile.0][tile.1] == Tile::MINE {
-            self.draw_tiles(canvas, true);
-        } else if self.data[tile.0][tile.1] == Tile::SAFE {
-            self.flood(tile.0, tile.1);
+        match tile {
+            Ok((x, y)) => {
+                if self.shown[x][y] == false {
+                    self.shown[x][y] = true;
+                    // 踩雷之后游戏结束
+                    if self.data[x][y] == Tile::MINE {
+                        self.draw_tiles(canvas, true);
+                        set_tile_from_img(canvas, &Tile::RED_MINE, x, y);
+                        self.data[x][y] = Tile::RED_MINE;
+                        return false;
+                    } else if self.data[x][y] == Tile::SAFE {
+                        self.flood(x, y);
+                    }
+                    // set_tile_from_img(canvas, &self.data[x][y], x, y);
+                }
+            }
+            Err(_) => {}
         }
+        true
     }
 
     /// DFS 算法检测连续的安全区域，
@@ -189,6 +223,27 @@ impl Matrix {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// 检查是否已经排完了所有的雷，若排完，游戏获胜
+    pub fn check(&self) -> bool {
+        // let is_success = false;
+        for i in 0..self.n {
+            for j in 0..self.m {
+                if self.shown[i][j] == false && self.data[i][j] != Tile::MINE {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn set_shown(&mut self, flag: bool) {
+        for i in 0..self.n {
+            for j in 0..self.m {
+                self.shown[i][j] = flag;
             }
         }
     }
@@ -222,7 +277,7 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: &Tile, mx: usize, my: usize
     match t {
         Tile::MINE => {
             // SDL_SetColorKey(surface, flag, key)
-            let mut surface = Surface::load_bmp(Path::new("./assets/mine.bmp")).unwrap();
+            let surface = Surface::load_bmp(Path::new("./assets/mine.bmp")).unwrap();
             // SurfaceRef::set_color_key(&mut surface, true, BACKGROUND_COLOR).unwrap();
             // SDL_MapRGB(format, r, g, b)
             // let texture = texture_creator.
@@ -231,6 +286,15 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: &Tile, mx: usize, my: usize
                 .unwrap();
             canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
         }
+
+        Tile::RED_MINE => {
+            let surface = Surface::load_bmp(Path::new("./assets/mine_red.bmp")).unwrap();
+            let texture = texture_creator
+                .create_texture_from_surface(surface)
+                .unwrap();
+            canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
+        }
+
         Tile::NUM(num) => {
             if num > &0 {
                 let surface =
@@ -241,6 +305,7 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: &Tile, mx: usize, my: usize
                 canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
             }
         }
+
         Tile::FLAG => {
             let surface = Surface::load_bmp(Path::new("./assets/flag.bmp")).unwrap();
             let texture = texture_creator
@@ -248,9 +313,11 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: &Tile, mx: usize, my: usize
                 .unwrap();
             canvas.copy(&texture, None, get_tile_rect(mx, my)).unwrap();
         }
+
         Tile::SAFE => {
             draw_one_tile(canvas, SAFE_COLOR, mx, my).unwrap();
         }
+
         _ => (),
     }
 
@@ -260,27 +327,25 @@ fn set_tile_from_img(canvas: &mut Canvas<Window>, t: &Tile, mx: usize, my: usize
 }
 
 /// 获取对应 Tile 所在的 Rect
+/// 这里的 x 和 y 表示 x 行 y 列
 fn get_tile_rect(x: usize, y: usize) -> Rect {
     Rect::new(
         (TILE_WIDTH * y as u32) as i32,
-        (TILE_WIDTH * x as u32) as i32,
+        (TILE_WIDTH * x as u32 + MARGIN as u32) as i32,
         TILE_WIDTH,
         TILE_WIDTH,
     )
-}
-
-pub fn set_tile_highlight(canvas: &mut Canvas<Window>, mouse_state: MouseState) {
-    let tile = mouse_key_in_which_tile(mouse_state.x(), mouse_state.y());
-    canvas.set_draw_color(HOVER_COLOR);
-    canvas.fill_rect(get_tile_rect(tile.0, tile.1)).unwrap();
-    canvas.set_draw_color(BOARD_COLOR);
-    canvas.draw_rect(get_tile_rect(tile.0, tile.1)).unwrap();
 }
 
 /// 检测当前鼠标位于哪一块 Tile 上
-fn mouse_key_in_which_tile(x: i32, y: i32) -> (usize, usize) {
-    (
-        y as usize / TILE_WIDTH as usize,
-        x as usize / TILE_WIDTH as usize,
-    )
+/// 鼠标的坐标是按照横轴为 x，纵轴为 y 来计算
+fn mouse_key_in_which_tile(x: i32, y: i32) -> Result<(usize, usize), String> {
+    if y - MARGIN as i32 >= 0 {
+        Ok((
+            (y - MARGIN as i32) as usize / TILE_WIDTH as usize,
+            x as usize / TILE_WIDTH as usize,
+        ))
+    } else {
+        Err("Err".to_owned())
+    }
 }
